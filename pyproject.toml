@@ -1,0 +1,19 @@
+[project]
+name = "niquests-mock"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [{ email = "n.biryukov12@gmail.com" }]
+requires-python = ">=3.11"
+
+dependencies = [
+    "niquests>=3.14.1",
+    "pytest>=8.4.0",
+]
+
+[project.entry-points."pytest11"]
+"niquests-mock" = "niquests_mock.plugin"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
