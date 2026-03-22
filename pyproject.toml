@@ -1,19 +1,68 @@
 [project]
 name = "niquests-mock"
 version = "0.1.0"
-description = "Add your description here"
+description = "RESPX-like HTTP mocking for niquests"
 readme = "README.md"
-authors = [{ email = "n.biryukov12@gmail.com" }]
-requires-python = ">=3.11"
+authors = [
+    { name = "Nikita Biryukov", email = "n.biryukov12@gmail.com" },
+]
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.13"
+keywords = ["niquests", "http", "mock", "testing", "pytest", "respx"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: Pytest",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Testing",
+    "Typing :: Typed",
+]
 
 dependencies = [
-    "niquests>=3.14.1",
-    "pytest>=8.4.0",
+    "niquests>=3.17.0",
+    "orjson>=3.10.18",
 ]
+
+[project.urls]
+Homepage = "https://github.com/0x12th/niquests-mock"
+Repository = "https://github.com/0x12th/niquests-mock"
+Issues = "https://github.com/0x12th/niquests-mock/issues"
+Changelog = "https://github.com/0x12th/niquests-mock/releases"
 
 [project.entry-points."pytest11"]
 "niquests-mock" = "niquests_mock.plugin"
 
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.1",
+    "pytest>=8.4.2",
+    "ruff>=0.15.7",
+    "ty>=0.0.24",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py313"
+src = ["src", "tests", "examples"]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+publish-url = "https://test.pypi.org/legacy/"
+explicit = true
+
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.10.4,<0.11.0"]
+build-backend = "uv_build"
