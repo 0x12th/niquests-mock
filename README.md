@@ -7,6 +7,18 @@
 
 RESPX-style HTTP mocking for [niquests](https://pypi.org/project/niquests/).
 
+## Installation
+
+```bash
+uv add niquests-mock
+```
+
+or
+
+```bash
+pip install niquests-mock
+```
+
 ## Usage
 
 ### Fixture Style
@@ -35,18 +47,6 @@ The plugin also exposes `respx_mock` as a compatibility alias for easier migrati
 uv sync --dev
 just check
 ```
-
-## Publishing
-
-PyPI publishing is configured through GitHub Actions with trusted publishing on version tags like `v0.1.1`.
-Recommended flow:
-
-1. Run the manual `Publish TestPyPI` workflow.
-2. Install and smoke-test the package from TestPyPI.
-3. Push a release tag like `v0.1.1`.
-4. The publish workflow verifies the tag matches `pyproject.toml`, runs checks, publishes to PyPI, and creates a GitHub Release.
-
-Before the first release, configure the PyPI and TestPyPI projects, GitHub environments, and trusted publishers.
 
 ### Decorator Style
 
