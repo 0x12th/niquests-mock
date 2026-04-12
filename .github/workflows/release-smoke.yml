@@ -1,0 +1,38 @@
+name: Release Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Package version to test from TestPyPI"
+        required: true
+        type: string
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package from TestPyPI
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            --index-url https://test.pypi.org/simple/ \
+            --extra-index-url https://pypi.org/simple/ \
+            "niquests-mock==${{ inputs.version }}"
+
+      - name: Smoke test import
+        run: |
+          python - <<'PY'
+          import niquests_mock
+          from niquests_mock import MockRouter
+
+          assert niquests_mock.__all__
+          assert MockRouter is not None
+          print("Smoke OK")
+          PY

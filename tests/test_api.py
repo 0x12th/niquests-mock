@@ -156,6 +156,33 @@ def test_fixture_api_matches_respx_style(niquests_mock: MockRouter) -> None:
     assert response.status_code == 200
 
 
+def test_respx_mock_fixture_alias(respx_mock: MockRouter) -> None:
+    route = respx_mock.get("https://example.org/alias").respond(status_code=201)
+    response = niquests.get("https://example.org/alias")
+
+    route.assert_called_once()
+    assert response.status_code == 201
+
+
+def test_assert_called_with_supports_request_pattern() -> None:
+    pattern = nmock.M(host="api.example.test", path="/users", method="GET")
+
+    with MockRouter() as router:
+        route = router.get(pattern).respond(status_code=200)
+        niquests.get("https://api.example.test/users")
+
+    route.assert_called_once_with(url=pattern)
+
+
+def test_build_response_allows_non_standard_status_code() -> None:
+    with MockRouter() as router:
+        router.get("https://example.org/custom").respond(status_code=299)
+        response = niquests.get("https://example.org/custom")
+
+    assert response.status_code == 299
+    assert response.reason == "299"
+
+
 def test_pass_through_uses_original_send(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_send(self, request, **kwargs):
         return nmock.build_response(request, status_code=204, text="passthrough")

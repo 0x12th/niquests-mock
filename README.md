@@ -1,5 +1,10 @@
 # niquests-mock
 
+[![CI](https://github.com/0x12th/niquests-mock/actions/workflows/ci.yml/badge.svg)](https://github.com/0x12th/niquests-mock/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/niquests-mock.svg)](https://pypi.org/project/niquests-mock/)
+[![Python](https://img.shields.io/pypi/pyversions/niquests-mock.svg)](https://pypi.org/project/niquests-mock/)
+[![License](https://img.shields.io/github/license/0x12th/niquests-mock.svg)](LICENSE)
+
 RESPX-style HTTP mocking for [niquests](https://pypi.org/project/niquests/).
 
 ## Usage
@@ -22,8 +27,26 @@ def test_fixture_style(niquests_mock):
     assert response.status_code == 200
 ```
 
-The plugin also exposes `respx_mock` as an alias:
-Use the `niquests_mock` fixture directly.
+The plugin also exposes `respx_mock` as a compatibility alias for easier migration from `respx`.
+
+## Development
+
+```bash
+uv sync --dev
+just check
+```
+
+## Publishing
+
+PyPI publishing is configured through GitHub Actions with trusted publishing on version tags like `v0.1.1`.
+Recommended flow:
+
+1. Run the manual `Publish TestPyPI` workflow.
+2. Install and smoke-test the package from TestPyPI.
+3. Push a release tag like `v0.1.1`.
+4. The publish workflow verifies the tag matches `pyproject.toml`, runs checks, publishes to PyPI, and creates a GitHub Release.
+
+Before the first release, configure the PyPI and TestPyPI projects, GitHub environments, and trusted publishers.
 
 ### Decorator Style
 
