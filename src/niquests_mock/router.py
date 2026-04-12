@@ -2,6 +2,7 @@ import inspect
 from contextvars import ContextVar, Token
 from copy import deepcopy
 from datetime import timedelta
+from functools import wraps
 from http import HTTPStatus
 from typing import Any, cast
 from unittest.mock import patch
@@ -21,6 +22,7 @@ from .types import (
     HeaderPattern,
     QueryPattern,
     SideEffect,
+    SyncSideEffect,
     TextMatcher,
     URLMatcher,
 )
@@ -41,6 +43,15 @@ def _response_bytes(
     return content, None
 
 
+def _reason_phrase(status_code: int, reason: str | None) -> str:
+    if reason is not None:
+        return reason
+    try:
+        return HTTPStatus(status_code).phrase
+    except ValueError:
+        return str(status_code)
+
+
 def build_response(
     request: PreparedRequest,
     *,
@@ -57,7 +68,7 @@ def build_response(
     response.url = request.url
     response.status_code = status_code
     response.headers = CaseInsensitiveDict(headers or {})
-    response.reason = reason or HTTPStatus(status_code).phrase
+    response.reason = _reason_phrase(status_code, reason)
     response.elapsed = timedelta(0)
 
     body, default_content_type = _response_bytes(content=content, text=text, json=json)
@@ -92,35 +103,58 @@ class MockRoute:
     ) -> None:
         self.router = router
         self.name = name
-        if isinstance(url, RequestPattern):
-            base_pattern = url.with_base_url(router.base_url)
-            extra_pattern = M(
-                method=method,
-                scheme=scheme,
-                host=host,
-                path=path,
-                headers=headers,
-                params=params,
-                content=content,
-                json=json,
-            )
-            self.pattern = base_pattern & extra_pattern
-        else:
-            self.pattern = RequestPattern(
-                method=method.upper() if method else None,
-                url=_resolve_url(router.base_url, url),
-                scheme=scheme,
-                host=host,
-                path=path,
-                headers=headers,
-                params=params,
-                content=content,
-                json=json,
-            )
+        self.pattern = self._build_pattern(
+            method=method,
+            url=url,
+            scheme=scheme,
+            host=host,
+            path=path,
+            headers=headers,
+            params=params,
+            content=content,
+            json=json,
+        )
         self.calls: list[Call] = []
         self._return_value: Response | None = None
         self._side_effect: SideEffect | None = None
         self._pass_through = False
+
+    def _build_pattern(
+        self,
+        *,
+        method: str | None,
+        url: URLMatcher | RequestPattern,
+        scheme: TextMatcher | None,
+        host: TextMatcher | None,
+        path: TextMatcher | None,
+        headers: HeaderPattern | None,
+        params: QueryPattern | None,
+        content: ContentMatcher,
+        json: Any | UnsetType,
+    ) -> RequestPattern:
+        extra_pattern = M(
+            method=method,
+            scheme=scheme,
+            host=host,
+            path=path,
+            headers=headers,
+            params=params,
+            content=content,
+            json=json,
+        )
+        if isinstance(url, RequestPattern):
+            return url.with_base_url(self.router.base_url) & extra_pattern
+        return RequestPattern(
+            method=method.upper() if method else None,
+            url=_resolve_url(self.router.base_url, url),
+            scheme=scheme,
+            host=host,
+            path=path,
+            headers=headers,
+            params=params,
+            content=content,
+            json=json,
+        )
 
     @property
     def method(self) -> str | None:
@@ -212,9 +246,9 @@ class MockRoute:
         json: Any | UnsetType = UNSET,
     ) -> None:
         self.assert_called()
-        matcher = RequestPattern(
-            method=method.upper() if method else None,
-            url=url if not isinstance(url, RequestPattern) else url.url,
+        matcher = self._build_pattern(
+            method=method,
+            url=url,
             scheme=scheme,
             host=host,
             path=path,
@@ -243,17 +277,20 @@ class MockRoute:
         call.response = response
         return response
 
+    def _raise_side_effect(self) -> None:
+        if isinstance(self._side_effect, Exception):
+            raise self._side_effect
+        if isinstance(self._side_effect, type) and issubclass(self._side_effect, Exception):
+            raise self._side_effect()
+
     def _resolve_sync(self, request: PreparedRequest, kwargs: dict[str, Any]) -> Response | None:
         call = self._record(request, kwargs)
         try:
             if self._pass_through:
                 return None
-            if isinstance(self._side_effect, Exception):
-                raise self._side_effect
-            if isinstance(self._side_effect, type) and issubclass(self._side_effect, Exception):
-                raise self._side_effect()
+            self._raise_side_effect()
             if callable(self._side_effect):
-                response = self._side_effect(request)
+                response = cast(SyncSideEffect, self._side_effect)(request)
                 if response is None:
                     raise TypeError(
                         "Route side_effect must return niquests.Response or raise an exception."
@@ -273,12 +310,9 @@ class MockRoute:
         try:
             if self._pass_through:
                 return None
-            if isinstance(self._side_effect, Exception):
-                raise self._side_effect
-            if isinstance(self._side_effect, type) and issubclass(self._side_effect, Exception):
-                raise self._side_effect()
+            self._raise_side_effect()
             if callable(self._side_effect):
-                response = self._side_effect(request)
+                response = cast(Any, self._side_effect)(request)
                 if inspect.isawaitable(response):
                     response = await response
                 if response is None:
@@ -326,6 +360,7 @@ class MockRouter:
     def __call__(self, func):
         if inspect.iscoroutinefunction(func):
 
+            @wraps(func)
             async def async_wrapper(*args: Any, **kwargs: Any):
                 async with type(self)(
                     assert_all_mocked=self.assert_all_mocked,
@@ -334,11 +369,9 @@ class MockRouter:
                 ):
                     return await func(*args, **kwargs)
 
-            async_wrapper.__name__ = getattr(func, "__name__", async_wrapper.__name__)
-            async_wrapper.__doc__ = getattr(func, "__doc__", None)
-            async_wrapper.__module__ = getattr(func, "__module__", async_wrapper.__module__)
             return async_wrapper
 
+        @wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any):
             with type(self)(
                 assert_all_mocked=self.assert_all_mocked,
@@ -347,9 +380,6 @@ class MockRouter:
             ):
                 return func(*args, **kwargs)
 
-        sync_wrapper.__name__ = getattr(func, "__name__", sync_wrapper.__name__)
-        sync_wrapper.__doc__ = getattr(func, "__doc__", None)
-        sync_wrapper.__module__ = getattr(func, "__module__", sync_wrapper.__module__)
         return sync_wrapper
 
     def __exit__(self, exc_type, exc, tb) -> None:

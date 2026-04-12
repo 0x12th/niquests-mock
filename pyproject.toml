@@ -1,6 +1,6 @@
 [project]
 name = "niquests-mock"
-version = "0.1.0"
+version = "0.1.1"
 description = "RESPX-like HTTP mocking for niquests"
 readme = "README.md"
 authors = [
@@ -8,13 +8,14 @@ authors = [
 ]
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 keywords = ["niquests", "http", "mock", "testing", "pytest", "respx"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Framework :: Pytest",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Internet :: WWW/HTTP",
     "Topic :: Software Development :: Testing",
@@ -47,7 +48,7 @@ dev = [
 testpaths = ["tests"]
 
 [tool.ruff]
-target-version = "py313"
+target-version = "py312"
 src = ["src", "tests", "examples"]
 line-length = 100
 
@@ -64,5 +65,5 @@ publish-url = "https://test.pypi.org/legacy/"
 explicit = true
 
 [build-system]
-requires = ["uv_build>=0.10.4,<0.11.0"]
+requires = ["uv_build>=0.10.4,<0.12.0"]
 build-backend = "uv_build"

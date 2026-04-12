@@ -71,31 +71,31 @@ def request(
     )
 
 
-def get(url: URLMatcher = None, **kwargs: Any) -> MockRoute:
+def get(url: URLMatcher | RequestPattern = None, **kwargs: Any) -> MockRoute:
     return route(url, method="GET", **kwargs)
 
 
-def post(url: URLMatcher = None, **kwargs: Any) -> MockRoute:
+def post(url: URLMatcher | RequestPattern = None, **kwargs: Any) -> MockRoute:
     return route(url, method="POST", **kwargs)
 
 
-def put(url: URLMatcher = None, **kwargs: Any) -> MockRoute:
+def put(url: URLMatcher | RequestPattern = None, **kwargs: Any) -> MockRoute:
     return route(url, method="PUT", **kwargs)
 
 
-def patch(url: URLMatcher = None, **kwargs: Any) -> MockRoute:
+def patch(url: URLMatcher | RequestPattern = None, **kwargs: Any) -> MockRoute:
     return route(url, method="PATCH", **kwargs)
 
 
-def delete(url: URLMatcher = None, **kwargs: Any) -> MockRoute:
+def delete(url: URLMatcher | RequestPattern = None, **kwargs: Any) -> MockRoute:
     return route(url, method="DELETE", **kwargs)
 
 
-def head(url: URLMatcher = None, **kwargs: Any) -> MockRoute:
+def head(url: URLMatcher | RequestPattern = None, **kwargs: Any) -> MockRoute:
     return route(url, method="HEAD", **kwargs)
 
 
-def options(url: URLMatcher = None, **kwargs: Any) -> MockRoute:
+def options(url: URLMatcher | RequestPattern = None, **kwargs: Any) -> MockRoute:
     return route(url, method="OPTIONS", **kwargs)
 
 
