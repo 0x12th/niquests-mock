@@ -1,6 +1,6 @@
 [project]
 name = "niquests-mock"
-version = "0.3.0"
+version = "0.3.1"
 description = "RESPX-like HTTP mocking for niquests"
 readme = "README.md"
 authors = [
