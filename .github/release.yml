@@ -27,3 +27,6 @@ changelog:
         - chore
         - ci
         - dependencies
+    - title: Other Changes
+      labels:
+        - "*"

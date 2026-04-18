@@ -2,15 +2,6 @@ name: Release
 
 on:
   workflow_dispatch:
-    inputs:
-      bump:
-        description: "Version bump to release"
-        required: true
-        type: choice
-        options:
-          - patch
-          - minor
-          - major
 
 permissions:
   id-token: write
@@ -24,6 +15,8 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     outputs:
+      bump: ${{ steps.bump.outputs.value }}
+      previous_tag: ${{ steps.bump.outputs.previous_tag }}
       version: ${{ steps.version.outputs.value }}
 
     steps:
@@ -43,8 +36,127 @@ jobs:
       - name: Ensure branch is up to date
         run: git fetch origin "${GITHUB_REF_NAME}" --tags
 
+      - name: Detect release bump
+        id: bump
+        run: |
+          python - <<'PY' >> "${GITHUB_OUTPUT}"
+          import re
+          import subprocess
+          import sys
+
+          def git(*args: str) -> str:
+              return subprocess.check_output(["git", *args], text=True).strip()
+
+          try:
+              previous_tag = git("describe", "--tags", "--abbrev=0", "--match", "v[0-9]*")
+          except subprocess.CalledProcessError:
+              previous_tag = ""
+
+          rev_range = f"{previous_tag}..HEAD" if previous_tag else "HEAD"
+          raw = git("log", rev_range, "--format=%s%n%b%x00")
+          entries = [entry.strip() for entry in raw.split("\x00") if entry.strip()]
+          entries = [
+              entry for entry in entries
+              if not entry.splitlines()[0].startswith("chore: release ")
+          ]
+
+          if not entries:
+              raise SystemExit("No commits since the previous release tag.")
+
+          bump = None
+          for entry in entries:
+              lines = entry.splitlines()
+              subject = lines[0].strip()
+              body = "\n".join(lines[1:])
+              text = f"{subject}\n{body}".lower()
+
+              if "breaking change" in text or re.match(r"^[^:]+!:", subject):
+                  bump = "major"
+                  break
+              if subject.startswith("feat:"):
+                  bump = "minor" if bump != "major" else bump
+                  continue
+              if subject.startswith(("fix:", "perf:", "refactor:", "revert:")):
+                  if bump not in {"major", "minor"}:
+                      bump = "patch"
+
+          if bump is None:
+              raise SystemExit(
+                  "No releasable conventional commits found since the previous release tag."
+              )
+
+          print(f"value={bump}")
+          print(f"previous_tag={previous_tag}")
+          PY
+
+      - name: Show release plan
+        run: |
+          echo "Previous tag: ${{ steps.bump.outputs.previous_tag || 'none' }}"
+          echo "Calculated bump: ${{ steps.bump.outputs.value }}"
+
+      - name: Build release notes
+        env:
+          PREVIOUS_TAG: ${{ steps.bump.outputs.previous_tag }}
+        run: |
+          python - <<'PY'
+          import os
+          import subprocess
+          from pathlib import Path
+
+          previous_tag = os.environ["PREVIOUS_TAG"]
+          rev_range = f"{previous_tag}..HEAD" if previous_tag else "HEAD"
+          raw = subprocess.check_output(
+              ["git", "log", rev_range, "--format=%s%x00"], text=True
+          )
+          subjects = [
+              subject.strip()
+              for subject in raw.split("\x00")
+              if subject.strip() and not subject.startswith("chore: release ")
+          ]
+
+          categories = {
+              "Breaking Changes": [],
+              "Features": [],
+              "Bug Fixes": [],
+              "Documentation": [],
+              "Maintenance": [],
+              "Other Changes": [],
+          }
+
+          for subject in reversed(subjects):
+              lowered = subject.lower()
+              if "!:" in subject:
+                  categories["Breaking Changes"].append(subject)
+              elif lowered.startswith("feat:"):
+                  categories["Features"].append(subject)
+              elif lowered.startswith(("fix:", "perf:", "refactor:", "revert:")):
+                  categories["Bug Fixes"].append(subject)
+              elif lowered.startswith("docs:"):
+                  categories["Documentation"].append(subject)
+              elif lowered.startswith(("chore:", "ci:", "build:", "test:")):
+                  categories["Maintenance"].append(subject)
+              else:
+                  categories["Other Changes"].append(subject)
+
+          lines = ["## What's Changed", ""]
+          for title, entries in categories.items():
+              if not entries:
+                  continue
+              lines.append(f"### {title}")
+              lines.extend(f"- {entry}" for entry in entries)
+              lines.append("")
+
+          if previous_tag:
+              lines.append(
+                  f"**Full Changelog**: https://github.com/${{ github.repository }}/compare/{previous_tag}...vNEXT"
+              )
+
+          Path("release-notes.md").write_text("\n".join(lines).rstrip() + "\n")
+          PY
+          sed -n '1,200p' release-notes.md
+
       - name: Bump version
-        run: uv version --bump "${{ inputs.bump }}" --frozen
+        run: uv version --bump "${{ steps.bump.outputs.value }}" --frozen
 
       - name: Read version
         id: version
@@ -114,6 +226,12 @@ jobs:
           name: dist
           path: dist/*
 
+      - name: Upload release notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+
       - name: Push release commit and tag
         env:
           VERSION: ${{ steps.version.outputs.value }}
@@ -147,6 +265,25 @@ jobs:
           name: dist
           path: dist
 
+      - name: Download release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+          path: .
+
+      - name: Finalize release notes
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          path = Path("release-notes.md")
+          content = path.read_text()
+          path.write_text(content.replace("vNEXT", f"v{os.environ['VERSION']}"))
+          PY
+
       - name: Publish to PyPI
         run: uv publish
 
@@ -154,7 +291,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: "v${{ needs.prepare.outputs.version }}"
-          generate_release_notes: true
+          body_path: release-notes.md
           files: |
             dist/*.tar.gz
             dist/*.whl
