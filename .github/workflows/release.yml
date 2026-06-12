@@ -100,10 +100,10 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Type check
-        run: uv run ty check src tests
+        run: uv run ty check src tests examples
 
       - name: Test
-        run: uv run pytest -p no:cacheprovider -q
+        run: uv run pytest -p no:cacheprovider -q tests examples
 
       - name: Build distributions
         run: uv build
@@ -149,6 +149,30 @@ jobs:
 
       - name: Publish to PyPI
         run: uv publish
+
+      - name: Smoke test published package
+        run: |
+          python -m venv smoke-venv
+          smoke-venv/bin/python -m pip install --upgrade pip
+          smoke-venv/bin/python -m pip install "niquests-mock==${{ needs.prepare.outputs.version }}"
+          smoke-venv/bin/python - <<'PY'
+          import niquests
+          import niquests_mock
+          from niquests_mock import MockRouter
+
+          assert niquests_mock.__all__
+          with MockRouter() as router:
+              route = router.get("https://example.org/smoke").respond(
+                  status_code=200,
+                  json={"ok": True},
+              )
+              response = niquests.get("https://example.org/smoke")
+
+          route.assert_called_once()
+          assert response.status_code == 200
+          assert response.json() == {"ok": True}
+          print("Smoke OK")
+          PY
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

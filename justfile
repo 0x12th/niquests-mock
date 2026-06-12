@@ -8,7 +8,7 @@ build:
     uv build
 
 test:
-    uv run pytest -p no:cacheprovider -q
+    uv run pytest -p no:cacheprovider -q tests examples
 
 lint:
     uv run ruff check .
@@ -20,13 +20,13 @@ fmt-check:
     uv run ruff format --check .
 
 typecheck:
-    uv run ty check src tests
+    uv run ty check src tests examples
 
 check:
     uv run ruff check .
     uv run ruff format --check .
-    uv run ty check src tests
-    uv run pytest -p no:cacheprovider -q
+    uv run ty check src tests examples
+    uv run pytest -p no:cacheprovider -q tests examples
 
 fix:
     uv run ruff check . --fix
