@@ -12,9 +12,23 @@ class RouterKwargs(TypedDict, total=False):
     base_url: str | None
 
 
+_ALLOWED_MARKER_KWARGS = frozenset(RouterKwargs.__annotations__)
+
+
 def _router_kwargs_from_marker(request: FixtureRequest) -> RouterKwargs:
     marker = request.node.get_closest_marker("niquests_mock")
-    return cast(RouterKwargs, dict(marker.kwargs)) if marker else {}
+    if marker is None:
+        return {}
+
+    kwargs = dict(marker.kwargs)
+    unknown = sorted(set(kwargs) - _ALLOWED_MARKER_KWARGS)
+    if unknown:
+        unknown_keys = ", ".join(unknown)
+        allowed_keys = ", ".join(sorted(_ALLOWED_MARKER_KWARGS))
+        raise pytest.UsageError(
+            f"Unknown niquests_mock marker kwargs: {unknown_keys}. Allowed kwargs: {allowed_keys}"
+        )
+    return cast(RouterKwargs, kwargs)
 
 
 def pytest_configure(config) -> None:

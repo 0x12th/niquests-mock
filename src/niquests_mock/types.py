@@ -1,4 +1,4 @@
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from re import Pattern
 from typing import Any, TypeAlias
 
@@ -14,5 +14,7 @@ QueryPattern: TypeAlias = Mapping[str, QueryValue]
 JSONMatcher: TypeAlias = Any | Callable[[Any], bool]
 ContentMatcher: TypeAlias = bytes | str | Pattern[bytes] | Callable[[bytes | None], bool] | None
 SyncSideEffect: TypeAlias = Callable[[PreparedRequest], Response | None]
-AsyncSideEffect: TypeAlias = Callable[[PreparedRequest], Response | None | Any]
+AsyncSideEffect: TypeAlias = Callable[
+    [PreparedRequest], Response | Awaitable[Response | None] | None
+]
 SideEffect: TypeAlias = Exception | type[Exception] | SyncSideEffect | AsyncSideEffect

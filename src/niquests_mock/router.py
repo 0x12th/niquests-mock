@@ -1,22 +1,19 @@
 import inspect
 from contextvars import ContextVar, Token
 from copy import deepcopy
-from datetime import timedelta
 from functools import wraps
-from http import HTTPStatus
+from threading import RLock
 from typing import Any, cast
 from unittest.mock import patch
 
-import orjson
 from niquests.async_session import AsyncSession
-from niquests.cookies import cookiejar_from_dict
 from niquests.models import PreparedRequest, Response
 from niquests.sessions import Session
-from niquests.structures import CaseInsensitiveDict
 
 from .exceptions import AllMockedAssertionError, NoMockAddress
 from .matchers import M, RequestPattern, _resolve_url
 from .models import UNSET, Call, UnsetType
+from .responses import build_response
 from .types import (
     ContentMatcher,
     HeaderPattern,
@@ -28,61 +25,39 @@ from .types import (
 )
 
 
-def _response_bytes(
-    *,
-    content: bytes | str | None,
-    text: str | None,
-    json: Any | UnsetType,
-) -> tuple[bytes | None, str | None]:
-    if json is not UNSET:
-        return orjson.dumps(json), "application/json"
-    if text is not None:
-        return text.encode("utf-8"), "text/plain; charset=utf-8"
-    if isinstance(content, str):
-        return content.encode("utf-8"), None
-    return content, None
+def _request_summary(request: PreparedRequest) -> str:
+    parts = [str(request.method or "<unknown>"), str(request.url or "<unknown>")]
+    if request.body is not None:
+        parts.append("body=<set>")
+    return " ".join(parts)
 
 
-def _reason_phrase(status_code: int, reason: str | None) -> str:
-    if reason is not None:
-        return reason
-    try:
-        return HTTPStatus(status_code).phrase
-    except ValueError:
-        return str(status_code)
+def _pattern_summary(pattern: RequestPattern) -> str:
+    parts: list[str] = []
+    if pattern.method:
+        parts.append(pattern.method)
+    if pattern.url is not None:
+        parts.append(str(pattern.url))
+    if pattern.scheme:
+        parts.append(f"scheme={pattern.scheme}")
+    if pattern.host:
+        parts.append(f"host={pattern.host}")
+    if pattern.path:
+        parts.append(f"path={pattern.path}")
+    if pattern.headers:
+        parts.append("headers=<set>")
+    if pattern.params:
+        parts.append(f"params={pattern._normalized_params or dict(pattern.params)}")
+    if pattern.content is not None:
+        parts.append("content=<set>")
+    if pattern.json is not UNSET:
+        parts.append("json=<set>")
+    return " ".join(parts) or "*"
 
 
-def build_response(
-    request: PreparedRequest,
-    *,
-    status_code: int = 200,
-    headers: dict[str, str] | None = None,
-    content: bytes | str | None = None,
-    text: str | None = None,
-    json: Any | UnsetType = UNSET,
-    cookies: dict[str, str] | None = None,
-    reason: str | None = None,
-) -> Response:
-    response = Response()
-    response.request = request
-    response.url = request.url
-    response.status_code = status_code
-    response.headers = CaseInsensitiveDict(headers or {})
-    response.reason = _reason_phrase(status_code, reason)
-    response.elapsed = timedelta(0)
-
-    body, default_content_type = _response_bytes(content=content, text=text, json=json)
-    if default_content_type:
-        response.headers.setdefault("Content-Type", default_content_type)
-        response.encoding = "utf-8"
-
-    response._content = body
-    response._content_consumed = True
-    if cookies:
-        response.cookies = cookiejar_from_dict(cookies)
-    if body is not None:
-        response.headers.setdefault("Content-Length", str(len(body)))
-    return response
+def _route_summary(route: "MockRoute") -> str:
+    prefix = f"{route.name}: " if route.name else ""
+    return f"{prefix}{_pattern_summary(route.pattern)}"
 
 
 class MockRoute:
@@ -259,7 +234,11 @@ class MockRoute:
         )
         last_request = self.calls[-1].request
         if not matcher.matches(last_request):
-            raise AssertionError("Last call did not match the expected request payload.")
+            raise AssertionError(
+                "Last call did not match the expected request.\n"
+                f"Expected: {_pattern_summary(matcher)}\n"
+                f"Actual: {_request_summary(last_request)}"
+            )
 
     def assert_called_once_with(self, **kwargs: Any) -> None:
         self.assert_called_once()
@@ -335,6 +314,7 @@ class MockRouter:
     _sync_patch: Any = None
     _async_patch: Any = None
     _patch_depth: int = 0
+    _patch_lock = RLock()
 
     def __init__(
         self,
@@ -416,6 +396,11 @@ class MockRouter:
 
     @classmethod
     def _install_patches(cls) -> None:
+        if cls._sync_patch is not None or cls._async_patch is not None:
+            if cls._sync_patch is not None and cls._async_patch is not None:
+                return
+            raise RuntimeError("MockRouter patch state is inconsistent.")
+
         def sync_send(
             session: Session,
             request: PreparedRequest,
@@ -429,7 +414,7 @@ class MockRouter:
             route = router.match(request)
             if route is None:
                 if router.assert_all_mocked:
-                    raise NoMockAddress(f"Request not mocked: {request.method} {request.url}")
+                    raise NoMockAddress(router._no_mock_message(request))
                 return _original(session, request, **kwargs)
             response = route._resolve_sync(request, kwargs)
             if response is None:
@@ -449,7 +434,7 @@ class MockRouter:
             route = router.match(request)
             if route is None:
                 if router.assert_all_mocked:
-                    raise NoMockAddress(f"Request not mocked: {request.method} {request.url}")
+                    raise NoMockAddress(router._no_mock_message(request))
                 return await _original(session, request, **kwargs)
             response = await route._resolve_async(request, kwargs)
             if response is None:
@@ -472,24 +457,30 @@ class MockRouter:
 
     def start(self) -> "MockRouter":
         cls = type(self)
-        if self._token is not None:
-            return self
-        if cls._patch_depth == 0:
-            cls._install_patches()
-        cls._patch_depth += 1
-        routers = cls._active_routers.get()
-        self._token = cls._active_routers.set((*routers, self))
+        with cls._patch_lock:
+            if self._token is not None:
+                return self
+            if cls._patch_depth < 0:
+                raise RuntimeError("MockRouter patch depth is inconsistent.")
+            if cls._patch_depth == 0:
+                cls._install_patches()
+            cls._patch_depth += 1
+            routers = cls._active_routers.get()
+            self._token = cls._active_routers.set((*routers, self))
         return self
 
     def stop(self) -> "MockRouter":
         cls = type(self)
-        if self._token is None:
-            return self
-        cls._active_routers.reset(self._token)
-        self._token = None
-        cls._patch_depth -= 1
-        if cls._patch_depth == 0:
-            cls._remove_patches()
+        with cls._patch_lock:
+            if self._token is None:
+                return self
+            if cls._patch_depth <= 0:
+                raise RuntimeError("MockRouter patch depth is inconsistent.")
+            cls._active_routers.reset(self._token)
+            self._token = None
+            cls._patch_depth -= 1
+            if cls._patch_depth == 0:
+                cls._remove_patches()
         return self
 
     def reset(self) -> None:
@@ -522,6 +513,21 @@ class MockRouter:
     def assert_not_called(self) -> None:
         if self.calls:
             raise AssertionError(f"Router expected no calls, got {len(self.calls)}")
+
+    def _registered_routes_summary(self) -> str:
+        if not self.routes:
+            return "Registered routes: <none>"
+        lines = ["Registered routes:"]
+        lines.extend(f"- {_route_summary(route)}" for route in self.routes[:10])
+        remaining = len(self.routes) - 10
+        if remaining > 0:
+            lines.append(f"... and {remaining} more")
+        return "\n".join(lines)
+
+    def _no_mock_message(self, request: PreparedRequest) -> str:
+        return (
+            f"Request not mocked: {_request_summary(request)}\n{self._registered_routes_summary()}"
+        )
 
     def match(self, request: PreparedRequest) -> "MockRoute | None":
         request_url = request.url
