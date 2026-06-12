@@ -50,7 +50,7 @@ just check
 
 ### Decorator Style
 
-Useful when you want the test to look almost exactly like a `respx`-based test.
+Useful when you want a familiar `respx`-style test shape.
 
 ```python
 import niquests
@@ -83,6 +83,12 @@ def test_strict_routes():
     assert response.status_code == 200
 ```
 
+Decorator calls use a fresh router for every decorated function invocation. The
+fresh router copies router configuration such as `assert_all_mocked`,
+`assert_all_called`, and `base_url`, but it does not reuse routes registered on
+the decorator object itself. Register routes inside the decorated function via
+`nmock.get(...)`, `nmock.route(...)`, or other top-level helpers.
+
 ### Context Manager Style
 
 Best when you want explicit router lifetime inside the test body.
@@ -106,6 +112,131 @@ def test_context_manager():
     assert response.json() == [{"id": 1, "name": "Ada"}]
 ```
 
-## Project Status
+`MockRouter` can be nested. The innermost active router handles requests while it
+is active, and the outer router is restored after the inner context exits. Patch
+cleanup runs when a context exits, including when the test body raises an
+exception. Repeated `start()` / `stop()` calls on the same router are idempotent.
 
-Currently in dev.
+### Strict Mode and Pass-through
+
+By default, `assert_all_mocked=True`: unmatched requests raise `NoMockAddress`.
+Set `assert_all_mocked=False` to allow unmatched requests to use the original
+`niquests` transport.
+
+A route can opt into pass-through even in strict mode. The request then uses the
+original `niquests` transport, so use this only for URLs that your test
+environment intentionally allows:
+
+```python
+with MockRouter(assert_all_mocked=True) as router:
+    router.get(live_url).pass_through()
+    response = niquests.get(live_url)
+```
+
+Use `assert_all_called=True` when every registered route must be exercised. On a
+normal router exit, unused routes raise `AllMockedAssertionError`. If the test
+body already raised another exception, `assert_all_called` is skipped so the
+original error is preserved.
+
+### Pytest Marker Configuration
+
+The pytest plugin accepts these marker keyword arguments:
+
+- `assert_all_mocked`
+- `assert_all_called`
+- `base_url`
+
+Unknown marker keyword arguments raise `pytest.UsageError` so typos fail early.
+
+### Matching Order and Precedence
+
+Routes are matched by the active router only. Nested routers use the innermost
+active router first; outer routers are restored when inner contexts exit.
+
+Within one router:
+
+1. Exact `method + URL` routes are checked first.
+2. If multiple exact routes share the same key, the most recently registered
+   route wins.
+3. Non-exact routes, including regex/callable/pattern routes, are checked in
+   reverse registration order. Exact-route precedence is higher than fallback
+   route recency.
+4. If no route matches, `assert_all_mocked=True` raises `NoMockAddress`; with
+   `assert_all_mocked=False`, the request uses the original `niquests` transport.
+
+Diagnostics intentionally show request method/URL and route summaries, but avoid
+printing header values or body contents by default.
+
+### Side Effects
+
+Use `side_effect` when a route needs custom logic. The callable receives the
+`niquests.models.PreparedRequest` and must return a `niquests.Response` or raise
+an exception.
+
+```python
+import niquests
+from niquests_mock import MockRouter, build_response
+
+
+with MockRouter() as router:
+    def create_job(request):
+        return build_response(request, status_code=201, json={"id": 1})
+
+    router.post("https://api.example.test/jobs").mock(side_effect=create_job)
+
+    response = niquests.post("https://api.example.test/jobs", json={"name": "build"})
+```
+
+Exceptions are recorded on `Call.exception` before being re-raised.
+
+```python
+with MockRouter() as router:
+    route = router.get("https://api.example.test/fails").mock(
+        side_effect=RuntimeError("boom"),
+    )
+```
+
+For async requests, side effects may be `async def` callables or return awaitables.
+
+```python
+import niquests
+from niquests_mock import MockRouter, build_response
+
+
+async def test_async_side_effect():
+    async with MockRouter() as router:
+        async def get_status(request):
+            return build_response(request, status_code=200, json={"ok": True})
+
+        router.get("https://api.example.test/status").mock(side_effect=get_status)
+        response = await niquests.arequest("GET", "https://api.example.test/status")
+
+    assert response.json() == {"ok": True}
+```
+
+### Async Usage
+
+`MockRouter` supports async context-manager use and patches `niquests` async
+send calls for the active context.
+
+```python
+async def test_async_context_manager():
+    async with MockRouter(base_url="https://api.example.test") as router:
+        router.get("/health").respond(json={"ok": True})
+        response = await niquests.arequest("GET", "https://api.example.test/health")
+
+    assert response.json() == {"ok": True}
+```
+
+### Compatibility Notes vs RESPX
+
+The API is intentionally RESPX-like for common workflows:
+
+- `niquests_mock` pytest fixture and `respx_mock` alias;
+- decorator style via `@niquests_mock.mock`;
+- context-manager style via `MockRouter`;
+- named route lookup and route assertions.
+
+This package targets `niquests`, not `httpx`, and does not claim complete RESPX
+feature parity. Treat unsupported RESPX behavior as out of contract unless it is
+explicitly documented here or covered by tests.
