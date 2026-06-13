@@ -452,6 +452,80 @@ def test_niquests_runtime_contracts_are_supported() -> None:
     assert response.json() == {"ok": True}
 
 
+def test_original_sync_send_contract_is_preserved_for_passthrough_and_unmatched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from niquests.models import PreparedRequest, Response
+    from niquests.sessions import Session
+
+    calls: list[tuple[str | None, dict[str, Any]]] = []
+
+    def original_send(session: Session, request: PreparedRequest, **kwargs: Any) -> Response:
+        calls.append((request.url, dict(kwargs)))
+        return nmock.build_response(request, status_code=218, text="original sync")
+
+    monkeypatch.setattr(Session, "send", original_send)
+
+    with MockRouter(assert_all_mocked=False) as router:
+        router.get("https://api.example.test/pass-through").pass_through()
+        pass_through_response = niquests.get("https://api.example.test/pass-through")
+        unmatched_response = niquests.get("https://api.example.test/unmatched")
+
+    assert pass_through_response.status_code == 218
+    assert pass_through_response.text == "original sync"
+    assert unmatched_response.status_code == 218
+    assert unmatched_response.text == "original sync"
+    assert [url for url, kwargs in calls] == [
+        "https://api.example.test/pass-through",
+        "https://api.example.test/unmatched",
+    ]
+    assert all("timeout" in kwargs for url, kwargs in calls)
+
+
+def test_original_async_send_contract_is_preserved_for_passthrough_and_unmatched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from niquests.async_session import AsyncSession
+    from niquests.models import PreparedRequest, Response
+
+    calls: list[tuple[str | None, dict[str, Any]]] = []
+
+    async def original_send(
+        session: AsyncSession,
+        request: PreparedRequest,
+        **kwargs: Any,
+    ) -> Response:
+        calls.append((request.url, dict(kwargs)))
+        return nmock.build_response(request, status_code=219, text="original async")
+
+    monkeypatch.setattr(AsyncSession, "send", original_send)
+
+    async def run() -> None:
+        async with MockRouter(assert_all_mocked=False) as router:
+            router.get("https://api.example.test/async-pass-through").pass_through()
+            pass_through_response = await niquests.arequest(
+                "GET",
+                "https://api.example.test/async-pass-through",
+            )
+            unmatched_response = await niquests.arequest(
+                "GET",
+                "https://api.example.test/async-unmatched",
+            )
+
+        assert pass_through_response.status_code == 219
+        assert pass_through_response.text == "original async"
+        assert unmatched_response.status_code == 219
+        assert unmatched_response.text == "original async"
+
+    asyncio.run(run())
+
+    assert [url for url, kwargs in calls] == [
+        "https://api.example.test/async-pass-through",
+        "https://api.example.test/async-unmatched",
+    ]
+    assert all("timeout" in kwargs for url, kwargs in calls)
+
+
 def test_pass_through_uses_original_send_in_strict_mode() -> None:
     with local_http_url() as url:
         with MockRouter(assert_all_mocked=True) as router:
