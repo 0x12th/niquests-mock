@@ -10,6 +10,7 @@ from niquests.async_session import AsyncSession
 from niquests.models import PreparedRequest, Response
 from niquests.sessions import Session
 
+from .diagnostics import pattern_summary, request_summary
 from .exceptions import AllMockedAssertionError, NoMockAddress
 from .matchers import M, RequestPattern, _resolve_url
 from .models import UNSET, Call, UnsetType
@@ -25,39 +26,9 @@ from .types import (
 )
 
 
-def _request_summary(request: PreparedRequest) -> str:
-    parts = [str(request.method or "<unknown>"), str(request.url or "<unknown>")]
-    if request.body is not None:
-        parts.append("body=<set>")
-    return " ".join(parts)
-
-
-def _pattern_summary(pattern: RequestPattern) -> str:
-    parts: list[str] = []
-    if pattern.method:
-        parts.append(pattern.method)
-    if pattern.url is not None:
-        parts.append(str(pattern.url))
-    if pattern.scheme:
-        parts.append(f"scheme={pattern.scheme}")
-    if pattern.host:
-        parts.append(f"host={pattern.host}")
-    if pattern.path:
-        parts.append(f"path={pattern.path}")
-    if pattern.headers:
-        parts.append("headers=<set>")
-    if pattern.params:
-        parts.append("params=<set>")
-    if pattern.content is not None:
-        parts.append("content=<set>")
-    if pattern.json is not UNSET:
-        parts.append("json=<set>")
-    return " ".join(parts) or "*"
-
-
 def _route_summary(route: "MockRoute") -> str:
     prefix = f"{route.name}: " if route.name else ""
-    return f"{prefix}{_pattern_summary(route.pattern)}"
+    return f"{prefix}{pattern_summary(route.pattern)}"
 
 
 class MockRoute:
@@ -195,16 +166,16 @@ class MockRoute:
 
     def assert_called(self) -> None:
         if not self.called:
-            raise AssertionError(f"Route was not called: {_pattern_summary(self.pattern)}")
+            raise AssertionError(f"Route was not called: {pattern_summary(self.pattern)}")
 
     def assert_not_called(self) -> None:
         if self.called:
-            raise AssertionError(f"Route was unexpectedly called: {_pattern_summary(self.pattern)}")
+            raise AssertionError(f"Route was unexpectedly called: {pattern_summary(self.pattern)}")
 
     def assert_called_once(self) -> None:
         if self.call_count != 1:
             raise AssertionError(
-                f"Route expected 1 call, got {self.call_count}: {_pattern_summary(self.pattern)}"
+                f"Route expected 1 call, got {self.call_count}: {pattern_summary(self.pattern)}"
             )
 
     def assert_called_with(
@@ -236,8 +207,8 @@ class MockRoute:
         if not matcher.matches(last_request):
             raise AssertionError(
                 "Last call did not match the expected request.\n"
-                f"Expected: {_pattern_summary(matcher)}\n"
-                f"Actual: {_request_summary(last_request)}"
+                f"Expected: {pattern_summary(matcher)}\n"
+                f"Actual: {request_summary(last_request)}"
             )
 
     def assert_called_once_with(self, **kwargs: Any) -> None:
@@ -278,7 +249,7 @@ class MockRoute:
             if self._return_value is not None:
                 return self._finalize(call, deepcopy(self._return_value))
             raise TypeError(
-                f"Matched route has no configured response: {_pattern_summary(self.pattern)}"
+                f"Matched route has no configured response: {pattern_summary(self.pattern)}"
             )
         except Exception as exc:
             call.exception = exc
@@ -304,7 +275,7 @@ class MockRoute:
             if self._return_value is not None:
                 return self._finalize(call, deepcopy(self._return_value))
             raise TypeError(
-                f"Matched route has no configured response: {_pattern_summary(self.pattern)}"
+                f"Matched route has no configured response: {pattern_summary(self.pattern)}"
             )
         except Exception as exc:
             call.exception = exc
@@ -511,7 +482,7 @@ class MockRouter:
             return
         not_called = [route for route in self.routes if not route.called]
         if not_called:
-            names = [route.name or _pattern_summary(route.pattern) for route in not_called]
+            names = [route.name or pattern_summary(route.pattern) for route in not_called]
             raise AllMockedAssertionError(f"Routes not called: {', '.join(names)}")
 
     def assert_not_called(self) -> None:
@@ -530,7 +501,7 @@ class MockRouter:
 
     def _no_mock_message(self, request: PreparedRequest) -> str:
         return (
-            f"Request not mocked: {_request_summary(request)}\n{self._registered_routes_summary()}"
+            f"Request not mocked: {request_summary(request)}\n{self._registered_routes_summary()}"
         )
 
     def match(self, request: PreparedRequest) -> "MockRoute | None":
