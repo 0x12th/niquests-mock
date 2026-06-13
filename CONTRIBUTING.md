@@ -1,8 +1,21 @@
-# Release Playbook
+# Contributing
+
+## Development
+
+Install development dependencies and run the full local check before opening a PR or cutting a release:
+
+```bash
+uv sync --dev
+just check
+```
+
+`just check` runs linting, formatting checks, type checking, and tests for `tests` and `examples`.
+
+## Release Playbook
 
 This project releases through the manual GitHub Actions `Release` workflow.
 
-## Normal release
+### Normal release
 
 1. Confirm `main`/`master` is green in CI.
 2. Confirm `CHANGELOG.md` has the intended user-facing notes under `Unreleased`.
@@ -22,7 +35,7 @@ This project releases through the manual GitHub Actions `Release` workflow.
    smoke-venv/bin/python -c "import niquests_mock; print(niquests_mock.__all__)"
    ```
 
-## Recovery: tag pushed, PyPI publish failed
+### Recovery: tag pushed, PyPI publish failed
 
 The current workflow pushes the release commit and tag before publishing to PyPI. If the
 `publish` job fails after the tag exists, use this recovery path.
@@ -48,7 +61,7 @@ The current workflow pushes the release commit and tag before publishing to PyPI
 5. Cut a new patch release after the fix. Do not reuse a version that has already been
    accepted by PyPI.
 
-## Recovery: GitHub Release creation failed
+### Recovery: GitHub Release creation failed
 
 If PyPI publish and smoke test passed but GitHub Release creation failed:
 
@@ -57,7 +70,7 @@ If PyPI publish and smoke test passed but GitHub Release creation failed:
 3. Attach the `dist/*.tar.gz` and `dist/*.whl` artifacts from the workflow run if they
    are still available.
 
-## Version and changelog policy
+### Version and changelog policy
 
 - PyPI versions are immutable. Once a version is published, fix forward with a new
   patch release.
@@ -65,7 +78,7 @@ If PyPI publish and smoke test passed but GitHub Release creation failed:
 - GitHub generated release notes are useful, but they should not be the only source of
   curated user-facing release information.
 
-## Manual TestPyPI smoke
+### Manual TestPyPI smoke
 
 Use the existing TestPyPI workflow before risky packaging changes. After publishing to
 TestPyPI, install from TestPyPI in a clean environment and run a minimal import/router
