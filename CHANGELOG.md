@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## Unreleased
 
+## 0.4.0 - 2026-06-13
+
 ### Added
 
 - Documented strict mode, pass-through, matching precedence, side effects, async usage, concurrency semantics, release workflow, and RESPX compatibility notes.
