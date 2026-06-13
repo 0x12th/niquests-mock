@@ -245,14 +245,38 @@ The active router is stored in a Python `ContextVar`.
 
 ### Compatibility Notes vs RESPX
 
-The API is intentionally RESPX-like for common workflows:
+`niquests-mock` is RESPX-like for common pytest workflows, but it is not a full RESPX
+clone. This package targets `niquests`, not `httpx`.
 
-- `niquests_mock` pytest fixture and `respx_mock` alias;
+Supported workflows:
+
+- pytest fixture style via `niquests_mock`;
+- `respx_mock` fixture alias for easier migration from RESPX-shaped tests;
 - decorator style via `@niquests_mock.mock`;
 - context-manager style via `MockRouter`;
-- named route lookup and route assertions.
+- named routes and `lookup()`;
+- sync and async `niquests` requests;
+- strict unmatched-request failures via `NoMockAddress`;
+- route-level pass-through;
+- exact URL matching and fallback pattern matching;
+- method, URL, scheme, host, path, headers, query params, content, and JSON matchers;
+- route call assertions and router `assert_all_called`.
 
-This package targets `niquests`, not `httpx`, and does not claim complete RESPX
-feature parity. Treat unsupported RESPX behavior as out of contract unless it is
-explicitly documented here, covered by tests, or listed in
-[`docs/compatibility.md`](docs/compatibility.md).
+Unsupported RESPX behavior should be treated as out of contract unless it is documented
+in this README or covered by tests.
+
+Current non-goals:
+
+- full RESPX API parity;
+- `httpx` transport mocking;
+- automatic propagation of active routers into newly created threads;
+- advanced route indexing for very large fallback route sets;
+- a plugin system for custom matcher classes;
+- stable internals for `MockRouter` patch lifecycle or route storage;
+- supporting `niquests` versions below the package requirement in `pyproject.toml`.
+
+`niquests-mock` patches `niquests.sessions.Session.send` and
+`niquests.async_session.AsyncSession.send`. Compatibility depends on those methods
+continuing to accept a prepared request and keyword arguments in the shape used by
+current supported `niquests` versions. Regression tests cover sync and async delegation
+to the original send methods for pass-through and unmatched requests.
