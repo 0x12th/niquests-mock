@@ -228,6 +228,21 @@ async def test_async_context_manager():
     assert response.json() == {"ok": True}
 ```
 
+### Concurrency Notes
+
+The active router is stored in a Python `ContextVar`.
+
+- Async tasks created inside an active `MockRouter` context inherit that active router
+  context and can use the same registered routes.
+- Nested routers are task-local: the innermost active router handles requests for the
+  current context, then the previous router is restored when the inner context exits.
+- New threads do not automatically inherit the active router context. If code under
+  test performs HTTP calls in another thread, create or start a `MockRouter` in that
+  thread, or explicitly propagate the Python context yourself.
+- The `niquests` send methods are patched process-wide while at least one router is
+  active, but route selection still depends on the current context. A patched send
+  call with no active router in its context falls back to the original transport.
+
 ### Compatibility Notes vs RESPX
 
 The API is intentionally RESPX-like for common workflows:

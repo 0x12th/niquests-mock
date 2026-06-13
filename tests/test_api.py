@@ -484,6 +484,25 @@ def test_async_request_is_mocked() -> None:
     asyncio.run(run())
 
 
+def test_parallel_async_tasks_share_active_router_context() -> None:
+    async def run() -> None:
+        async with MockRouter() as router:
+            users = router.get("https://api.example.test/users").respond(text="users")
+            jobs = router.get("https://api.example.test/jobs").respond(text="jobs")
+
+            users_response, jobs_response = await asyncio.gather(
+                niquests.arequest("GET", "https://api.example.test/users"),
+                niquests.arequest("GET", "https://api.example.test/jobs"),
+            )
+
+        assert users_response.text == "users"
+        assert jobs_response.text == "jobs"
+        users.assert_called_once()
+        jobs.assert_called_once()
+
+    asyncio.run(run())
+
+
 def test_nested_routers_use_innermost_then_restore_outer() -> None:
     with MockRouter() as outer:
         outer_route = outer.get("https://api.example.test/resource").respond(text="outer")
@@ -497,6 +516,32 @@ def test_nested_routers_use_innermost_then_restore_outer() -> None:
 
     assert outer_route.call_count == 2
     assert inner_route.call_count == 1
+
+
+def test_new_thread_without_context_uses_original_transport() -> None:
+    with local_http_url() as url:
+        results: list[tuple[int, str]] = []
+        errors: list[BaseException] = []
+
+        def fetch_in_thread() -> None:
+            try:
+                response = niquests.get(url)
+                if response.status_code is None or response.text is None:
+                    raise AssertionError("Thread response must include status code and text.")
+                results.append((response.status_code, response.text))
+            except BaseException as exc:
+                errors.append(exc)
+
+        with MockRouter(assert_all_mocked=True) as router:
+            route = router.get(url).respond(status_code=200, text="mocked")
+            thread = Thread(target=fetch_in_thread)
+            thread.start()
+            thread.join(timeout=5)
+
+        assert not thread.is_alive()
+        assert errors == []
+        assert results == [(209, "live")]
+        assert not route.called
 
 
 def test_patch_cleanup_after_exception_inside_context() -> None:
