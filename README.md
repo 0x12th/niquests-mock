@@ -254,4 +254,5 @@ The API is intentionally RESPX-like for common workflows:
 
 This package targets `niquests`, not `httpx`, and does not claim complete RESPX
 feature parity. Treat unsupported RESPX behavior as out of contract unless it is
-explicitly documented here or covered by tests.
+explicitly documented here, covered by tests, or listed in
+[`docs/compatibility.md`](docs/compatibility.md).
