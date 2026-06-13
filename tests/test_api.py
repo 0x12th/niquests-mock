@@ -335,10 +335,87 @@ def test_assert_called_with_mismatch_describes_expected_and_actual_safely() -> N
 
     message = str(exc_info.value)
     assert "Last call did not match the expected request." in message
-    assert "Expected: headers=<set> params={'expand': ['details']} json=<set>" in message
+    assert "Expected: headers=<set> params=<set> json=<set>" in message
     assert "Actual: POST https://api.example.test/jobs?token=secret body=<set>" in message
     assert "Bearer secret" not in message
     assert "Authorization" not in message
+    assert "expand" not in message
+
+
+def test_route_assertion_errors_redact_sensitive_matchers() -> None:
+    with MockRouter() as router:
+        route = router.get(
+            "https://api.example.test/secret",
+            headers={"Authorization": "Bearer secret"},
+            params={"token": "secret"},
+            json={"token": "secret"},
+        )
+
+    with pytest.raises(AssertionError) as not_called:
+        route.assert_called()
+    with pytest.raises(AssertionError) as not_called_once:
+        route.assert_called_once()
+
+    with MockRouter() as router:
+        called_route = router.get(
+            "https://api.example.test/called",
+            headers={"Authorization": "Bearer secret"},
+            params={"token": "secret"},
+        ).respond()
+        niquests.get(
+            "https://api.example.test/called?token=secret",
+            headers={"Authorization": "Bearer secret"},
+        )
+
+    with pytest.raises(AssertionError) as unexpectedly_called:
+        called_route.assert_not_called()
+
+    messages = [str(not_called.value), str(not_called_once.value), str(unexpectedly_called.value)]
+    for message in messages:
+        assert "headers=<set>" in message
+        assert "params=<set>" in message
+        assert "Bearer secret" not in message
+        assert "Authorization" not in message
+        assert "token" not in message
+
+
+def test_missing_response_error_redacts_sensitive_matchers() -> None:
+    with MockRouter() as router:
+        router.get(
+            "https://api.example.test/no-response",
+            headers={"Authorization": "Bearer secret"},
+            params={"token": "secret"},
+        )
+        with pytest.raises(TypeError) as exc_info:
+            niquests.get(
+                "https://api.example.test/no-response?token=secret",
+                headers={"Authorization": "Bearer secret"},
+            )
+
+    message = str(exc_info.value)
+    assert "Matched route has no configured response" in message
+    assert "headers=<set>" in message
+    assert "params=<set>" in message
+    assert "Bearer secret" not in message
+    assert "Authorization" not in message
+    assert "token" not in message
+
+
+def test_assert_all_called_error_redacts_sensitive_matchers() -> None:
+    with pytest.raises(AllMockedAssertionError) as exc_info:
+        with MockRouter(assert_all_called=True) as router:
+            router.get(
+                "https://api.example.test/unused-sensitive",
+                headers={"Authorization": "Bearer secret"},
+                params={"token": "secret"},
+            ).respond()
+
+    message = str(exc_info.value)
+    assert "headers=<set>" in message
+    assert "params=<set>" in message
+    assert "Bearer secret" not in message
+    assert "Authorization" not in message
+    assert "token" not in message
 
 
 def test_build_response_allows_non_standard_status_code() -> None:

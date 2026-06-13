@@ -347,9 +347,9 @@ class RequestPattern:
         if self.path:
             parts.append(f"path={self.path}")
         if self.headers:
-            parts.append(f"headers={dict(self.headers)}")
+            parts.append("headers=<set>")
         if self.params:
-            parts.append(f"params={dict(self.params)}")
+            parts.append("params=<set>")
         if self.content is not None:
             parts.append("content=<set>")
         if self.json is not UNSET:

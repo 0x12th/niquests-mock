@@ -47,7 +47,7 @@ def _pattern_summary(pattern: RequestPattern) -> str:
     if pattern.headers:
         parts.append("headers=<set>")
     if pattern.params:
-        parts.append(f"params={pattern._normalized_params or dict(pattern.params)}")
+        parts.append("params=<set>")
     if pattern.content is not None:
         parts.append("content=<set>")
     if pattern.json is not UNSET:
@@ -195,16 +195,16 @@ class MockRoute:
 
     def assert_called(self) -> None:
         if not self.called:
-            raise AssertionError(f"Route was not called: {self.pattern.describe()}")
+            raise AssertionError(f"Route was not called: {_pattern_summary(self.pattern)}")
 
     def assert_not_called(self) -> None:
         if self.called:
-            raise AssertionError(f"Route was unexpectedly called: {self.pattern.describe()}")
+            raise AssertionError(f"Route was unexpectedly called: {_pattern_summary(self.pattern)}")
 
     def assert_called_once(self) -> None:
         if self.call_count != 1:
             raise AssertionError(
-                f"Route expected 1 call, got {self.call_count}: {self.pattern.describe()}"
+                f"Route expected 1 call, got {self.call_count}: {_pattern_summary(self.pattern)}"
             )
 
     def assert_called_with(
@@ -277,7 +277,9 @@ class MockRoute:
                 return self._finalize(call, response)
             if self._return_value is not None:
                 return self._finalize(call, deepcopy(self._return_value))
-            raise TypeError(f"Matched route has no configured response: {self.pattern.describe()}")
+            raise TypeError(
+                f"Matched route has no configured response: {_pattern_summary(self.pattern)}"
+            )
         except Exception as exc:
             call.exception = exc
             raise
@@ -301,7 +303,9 @@ class MockRoute:
                 return self._finalize(call, cast(Response, response))
             if self._return_value is not None:
                 return self._finalize(call, deepcopy(self._return_value))
-            raise TypeError(f"Matched route has no configured response: {self.pattern.describe()}")
+            raise TypeError(
+                f"Matched route has no configured response: {_pattern_summary(self.pattern)}"
+            )
         except Exception as exc:
             call.exception = exc
             raise
@@ -507,7 +511,7 @@ class MockRouter:
             return
         not_called = [route for route in self.routes if not route.called]
         if not_called:
-            names = [route.name or route.pattern.describe() for route in not_called]
+            names = [route.name or _pattern_summary(route.pattern) for route in not_called]
             raise AllMockedAssertionError(f"Routes not called: {', '.join(names)}")
 
     def assert_not_called(self) -> None:
